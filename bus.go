@@ -28,7 +28,7 @@ func (bus *Bus) Connect() error {
 
 	var err error
 
-	bus.log.Info("Connecting")
+	bus.log.Info("Connecting...")
 	if bus.connection, err = amqp.Dial(bus.conf.Url); err != nil {
 		return err
 	}
@@ -36,6 +36,8 @@ func (bus *Bus) Connect() error {
 	if bus.channel, err = bus.connection.Channel(); err != nil {
 		return err
 	}
+
+	bus.log.Info("Connected")
 
 	if err = bus.channel.Qos(1, 0, false); err != nil {
 		return err
@@ -52,6 +54,8 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
+	bus.log.Debugf("Declared exchange '%s'", bus.conf.Exchange)
+
 	if bus.queue, err = bus.channel.QueueDeclare(bus.conf.Queue, // name
 		true,  // durable
 		false, // auto-deleted
@@ -62,6 +66,8 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
+	bus.log.Debugf("Declared queue '%s'", bus.conf.Queue)
+
 	if err = bus.channel.QueueBind(bus.conf.Queue, // queue
 		bus.conf.RoutingKey, // bindingKey
 		bus.conf.Exchange,   // sourceExchange
@@ -70,6 +76,11 @@ func (bus *Bus) Connect() error {
 	); err != nil {
 		return err
 	}
+
+	bus.log.Debugf("Bound '%s' queue to '%s' exchange with routing key '%s'",
+		bus.conf.Queue,
+		bus.conf.Exchange,
+		bus.conf.RoutingKey)
 
 	if bus.messages, err = bus.channel.Consume(
 		bus.conf.Queue,
@@ -83,12 +94,16 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
+	bus.log.Infof("Receiving messages from '%s'", bus.conf.Queue)
+
 	return nil
 }
 
 func (bus *Bus) Run() {
 	bus.wg.Add(1)
 	defer bus.wg.Done()
+	bus.doneCh = make(chan struct{})
+	bus.log.Info("Running")
 	for {
 		select {
 		case <-bus.doneCh:
@@ -96,6 +111,7 @@ func (bus *Bus) Run() {
 		case msg, ok := <-bus.messages:
 			if !ok {
 				// reconnect or close here?
+				bus.log.Info("Not OK")
 				return
 			}
 			bus.ProcessMessage(&msg)
@@ -104,6 +120,8 @@ func (bus *Bus) Run() {
 }
 
 func (bus *Bus) Close() {
+	bus.log.Info("Closing")
+
 	close(bus.doneCh)
 	bus.wg.Wait()
 	bus.channel.Close()
@@ -112,4 +130,5 @@ func (bus *Bus) Close() {
 
 func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
 
+	bus.log.Info("Processing message")
 }
