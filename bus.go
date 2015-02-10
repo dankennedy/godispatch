@@ -28,6 +28,7 @@ func (bus *Bus) Connect() error {
 
 	var err error
 
+	bus.log.Info("Connecting")
 	if bus.connection, err = amqp.Dial(bus.conf.Url); err != nil {
 		return err
 	}
