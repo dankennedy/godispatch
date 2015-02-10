@@ -6,6 +6,8 @@ import (
 	"github.com/streadway/amqp"
 )
 
+type HandlerFunc func(*Context)
+
 type Bus struct {
 	conf       *BusConfig
 	log        Logger
@@ -15,6 +17,8 @@ type Bus struct {
 	messages   <-chan amqp.Delivery
 	doneCh     chan struct{}
 	wg         sync.WaitGroup
+	routes     map[string][]HandlerFunc
+	middleware []HandlerFunc
 }
 
 type BusConfig struct {
@@ -114,7 +118,7 @@ func (bus *Bus) Run() {
 				bus.log.Info("Not OK")
 				return
 			}
-			bus.ProcessMessage(&msg)
+			go bus.ProcessMessage(&msg)
 		}
 	}
 }
@@ -128,7 +132,54 @@ func (bus *Bus) Close() {
 	bus.connection.Close()
 }
 
+func (bus *Bus) Use(middlewares ...HandlerFunc) {
+	bus.middleware = append(bus.middleware, middlewares...)
+}
+
+func (bus *Bus) createContext(msg *amqp.Delivery, handlers []HandlerFunc) *Context {
+	return &Context{
+		Delivery: msg,
+		Log:      bus.log,
+		Keys:     make(map[string]interface{}),
+		Errors:   []errorMsg{},
+		handlers: handlers,
+		index:    -1,
+	}
+}
+
 func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
 
+	bus.wg.Add(1)
+	defer bus.wg.Done()
 	bus.log.Info("Processing message")
+
+	var handlers []HandlerFunc
+	var found bool
+	if handlers, found = bus.routes[msg.ContentType]; !found {
+		bus.log.Warnf("No handler registered for message type %s", msg.ContentType)
+		return
+	}
+
+	handlers = bus.combineHandlers(handlers)
+	bus.createContext(msg, handlers).Next()
+
+}
+
+func (bus *Bus) Handle(msgType string, handlers []HandlerFunc) {
+	if bus.routes == nil {
+		bus.routes = map[string][]HandlerFunc{msgType: handlers}
+	} else {
+		if _, ok := bus.routes[msgType]; ok {
+			bus.log.Warnf("Overwriting handler for %s", msgType)
+		}
+		bus.routes[msgType] = handlers
+	}
+}
+
+func (bus *Bus) combineHandlers(handlers []HandlerFunc) []HandlerFunc {
+	s := len(bus.middleware) + len(handlers)
+	h := make([]HandlerFunc, 0, s)
+	h = append(h, bus.middleware...)
+	h = append(h, handlers...)
+	return h
 }
