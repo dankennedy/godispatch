@@ -15,7 +15,7 @@ type Logger interface {
 	Warn(s string)
 	Errorf(s string, args ...interface{})
 	Error(s string)
-	SetPrefix(s string)
+	WithPrefix(s string) Logger
 }
 
 type StandardLogger struct {
@@ -36,8 +36,9 @@ func NewStandardLogger(writer io.Writer) *StandardLogger {
 	}
 }
 
-func (me *StandardLogger) SetPrefix(s string) {
+func (me *StandardLogger) WithPrefix(s string) Logger {
 	me.prefix = s + " "
+	return me
 }
 func (me *StandardLogger) logimpl(level, s string, args ...interface{}) {
 	me.log.Println(fmt.Sprintf("\x1b[%dm%-6s\x1b[0m%s%s", me.levelmap[level], level, me.prefix, fmt.Sprintf(s, args...)))

@@ -8,7 +8,7 @@ import (
 func TestStandardLoggerNoPrefix(t *testing.T) {
 	log := NewStandardLogger(os.Stdout)
 	for _, prefix := range []string{"", "[context]"} {
-		log.SetPrefix(prefix)
+		log.WithPrefix(prefix)
 		log.Debug("some test text")
 		log.Debugf("some %s text %d", "numeric", 5)
 		log.Info("some test text")

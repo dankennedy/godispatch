@@ -10,7 +10,7 @@ func TestConnect(t *testing.T) {
 		conf: &BusConfig{
 			Url: "amqp://mystacklocal:localNotProduction!@mystack.vm/mystack",
 		},
-		log: NewStandardLogger(os.Stdout),
+		log: NewStandardLogger(os.Stdout).WithPrefix("bus_test"),
 	}
 	if err := bus.Connect(); err != nil {
 		t.Error("%v", err)
