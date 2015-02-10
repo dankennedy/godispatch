@@ -102,3 +102,25 @@ func TestMultiMiddleware(t *testing.T) {
 		t.Errorf("route handler was not invoked.")
 	}
 }
+
+func TestMiddlewareAbort(t *testing.T) {
+	middleware, msg := false, false
+	bus := CreateTestBus()
+	bus.Use(func(c *Context) {
+		middleware = true
+		c.Abort()
+	})
+	bus.Handle("messagetype1", []HandlerFunc{func(c *Context) {
+		msg = true
+	}})
+
+	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+
+	if !middleware {
+		t.Errorf("middleware was not invoked.")
+	}
+
+	if msg {
+		t.Errorf("route handler was invoked.")
+	}
+}

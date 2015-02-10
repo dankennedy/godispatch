@@ -132,8 +132,40 @@ func (bus *Bus) Close() {
 	bus.connection.Close()
 }
 
+func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
+
+	bus.wg.Add(1)
+	defer bus.wg.Done()
+
+	var handlers []HandlerFunc
+	var found bool
+	if handlers, found = bus.routes[msg.ContentType]; !found {
+		bus.log.Warnf("No route registered for message type %s", msg.ContentType)
+	} else {
+		handlers = bus.combineHandlers(handlers)
+		bus.createContext(msg, handlers).Next()
+	}
+
+	if err := msg.Ack(false); err != nil {
+		bus.log.Errorf("Failed to acknowledge %s message. %v", msg.ContentType, err)
+	}
+
+	bus.wg.Done()
+}
+
 func (bus *Bus) Use(middlewares ...HandlerFunc) {
 	bus.middleware = append(bus.middleware, middlewares...)
+}
+
+func (bus *Bus) Handle(msgType string, handlers []HandlerFunc) {
+	if bus.routes == nil {
+		bus.routes = map[string][]HandlerFunc{msgType: handlers}
+	} else {
+		if _, ok := bus.routes[msgType]; ok {
+			bus.log.Warnf("Overwriting route for %s", msgType)
+		}
+		bus.routes[msgType] = handlers
+	}
 }
 
 func (bus *Bus) createContext(msg *amqp.Delivery, handlers []HandlerFunc) *Context {
@@ -144,35 +176,6 @@ func (bus *Bus) createContext(msg *amqp.Delivery, handlers []HandlerFunc) *Conte
 		Errors:   []errorMsg{},
 		handlers: handlers,
 		index:    -1,
-	}
-}
-
-func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
-
-	bus.wg.Add(1)
-	defer bus.wg.Done()
-	bus.log.Info("Processing message")
-
-	var handlers []HandlerFunc
-	var found bool
-	if handlers, found = bus.routes[msg.ContentType]; !found {
-		bus.log.Warnf("No handler registered for message type %s", msg.ContentType)
-		return
-	}
-
-	handlers = bus.combineHandlers(handlers)
-	bus.createContext(msg, handlers).Next()
-
-}
-
-func (bus *Bus) Handle(msgType string, handlers []HandlerFunc) {
-	if bus.routes == nil {
-		bus.routes = map[string][]HandlerFunc{msgType: handlers}
-	} else {
-		if _, ok := bus.routes[msgType]; ok {
-			bus.log.Warnf("Overwriting handler for %s", msgType)
-		}
-		bus.routes[msgType] = handlers
 	}
 }
 
