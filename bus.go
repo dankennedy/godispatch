@@ -27,15 +27,9 @@ type Bus struct {
 
 type BusConfig struct {
 	Url                       string
-	InputExchange             string
 	InputQueue                string
-	InputRoutingKey           string
-	ErrorExchange             string
 	ErrorQueue                string
-	ErrorRoutingKey           string
-	RetryExchange             string
 	RetryQueue                string
-	RetryRoutingKey           string
 	RetryIntervalMilliseconds int32
 	RetryLimit                int32
 }
@@ -60,28 +54,28 @@ func (bus *Bus) Connect() error {
 	}
 
 	if bus.inputQ, err = bus.declareAndBind(bus.conf.InputQueue,
-		bus.conf.InputExchange,
-		bus.conf.InputRoutingKey,
+		bus.conf.InputQueue,
+		bus.conf.InputQueue,
 		nil); err != nil {
 		return err
 	}
 
 	if bus.errorQ, err = bus.declareAndBind(bus.conf.ErrorQueue,
-		bus.conf.ErrorExchange,
-		bus.conf.ErrorRoutingKey,
+		bus.conf.ErrorQueue,
+		bus.conf.ErrorQueue,
 		nil); err != nil {
 		return err
 	}
 
 	queueArgs := amqp.Table{
-		"x-dead-letter-exchange":    bus.conf.InputExchange,
-		"x-dead-letter-routing-key": bus.conf.InputRoutingKey,
+		"x-dead-letter-exchange":    bus.conf.InputQueue,
+		"x-dead-letter-routing-key": bus.conf.InputQueue,
 		"x-message-ttl":             bus.conf.RetryIntervalMilliseconds,
 	}
 
 	if bus.retryQ, err = bus.declareAndBind(bus.conf.RetryQueue,
-		bus.conf.RetryExchange,
-		bus.conf.RetryRoutingKey,
+		bus.conf.RetryQueue,
+		bus.conf.RetryQueue,
 		queueArgs); err != nil {
 		return err
 	}
@@ -225,10 +219,10 @@ func (bus *Bus) Publish(msg interface{}, msgType string) error {
 	}
 
 	return bus.channel.Publish(
-		bus.conf.InputExchange,   // exchange
-		bus.conf.InputRoutingKey, // routing key
-		true,  // mandatory
-		false, // immediate
+		bus.conf.InputQueue, // exchange
+		bus.conf.InputQueue, // routing key
+		true,                // mandatory
+		false,               // immediate
 		publishing)
 }
 
@@ -241,10 +235,10 @@ func (bus *Bus) SendToError(msg *amqp.Delivery) error {
 	}
 
 	return bus.channel.Publish(
-		bus.conf.ErrorExchange,   // exchange
-		bus.conf.ErrorRoutingKey, // routing key
-		true,  // mandatory
-		false, // immediate
+		bus.conf.ErrorQueue, // exchange
+		bus.conf.ErrorQueue, // routing key
+		true,                // mandatory
+		false,               // immediate
 		publishing)
 }
 

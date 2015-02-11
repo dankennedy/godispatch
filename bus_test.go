@@ -8,7 +8,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-var delayBus = 200 * time.Millisecond
+var delayBus = 100 * time.Millisecond
 
 type DeliveryAcknowledgerStub struct {
 	HasAckd     bool
@@ -44,14 +44,8 @@ func CreateTestBus() *Bus {
 		conf: &BusConfig{
 			Url:                       "amqp://guest:guest@192.168.59.103",
 			InputQueue:                "input_queue",
-			InputExchange:             "input_queue",
-			InputRoutingKey:           "",
 			ErrorQueue:                "error_queue",
-			ErrorExchange:             "error_queue",
-			ErrorRoutingKey:           "",
 			RetryQueue:                "retry_queue",
-			RetryExchange:             "retry_queue",
-			RetryRoutingKey:           "",
 			RetryIntervalMilliseconds: 10000,
 			RetryLimit:                5,
 		},
