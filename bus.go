@@ -1,7 +1,9 @@
 package godispatch
 
 import (
+	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/streadway/amqp"
 )
@@ -137,18 +139,16 @@ func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
 	bus.wg.Add(1)
 	defer bus.wg.Done()
 
-	var handlers []HandlerFunc
-	var found bool
-	if handlers, found = bus.routes[msg.ContentType]; !found {
+	if handlers, found := bus.routes[msg.ContentType]; !found {
 		bus.log.Warnf("No route registered for message type %s", msg.ContentType)
 	} else {
 		handlers = bus.combineHandlers(handlers)
 		bus.createContext(msg, handlers).Next()
 	}
 
-	// if err := msg.Ack(false); err != nil {
-	// 	bus.log.Errorf("Failed to acknowledge %s message. %v", msg.ContentType, err)
-	// }
+	if err := msg.Ack(false); err != nil {
+		bus.log.Errorf("Failed to acknowledge %s message. %v", msg.ContentType, err)
+	}
 }
 
 func (bus *Bus) Use(middlewares ...HandlerFunc) {
@@ -166,8 +166,25 @@ func (bus *Bus) Handle(msgType string, handlers []HandlerFunc) {
 	}
 }
 
-func (bus *Bus) Publish(msg interface{}) error {
-	return nil
+func (bus *Bus) Publish(msg interface{}, msgType string) error {
+
+	bodyBytes, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	publishing := amqp.Publishing{
+		ContentType: msgType,
+		Body:        bodyBytes,
+		Timestamp:   time.Now(),
+	}
+
+	return bus.channel.Publish(
+		bus.conf.Exchange,   // exchange
+		bus.conf.RoutingKey, // routing key
+		true,                // mandatory
+		false,               // immediate
+		publishing)
 }
 
 func (bus *Bus) DeadLetter(msg *amqp.Delivery) error {

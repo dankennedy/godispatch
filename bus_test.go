@@ -8,12 +8,43 @@ import (
 	"github.com/streadway/amqp"
 )
 
+var delayBus = 100 * time.Millisecond
+
+type DeliveryAcknowledgerStub struct {
+	HasAckd     bool
+	HasNackd    bool
+	HasRejected bool
+}
+
+func (me *DeliveryAcknowledgerStub) Ack(tag uint64, multiple bool) error {
+	me.HasAckd = true
+	return nil
+}
+func (me *DeliveryAcknowledgerStub) Nack(tag uint64, multiple bool, requeue bool) error {
+	me.HasNackd = true
+	return nil
+}
+func (me *DeliveryAcknowledgerStub) Reject(tag uint64, requeue bool) error {
+	me.HasRejected = true
+	return nil
+}
+
+func createDummyDelivery(contentType string) *amqp.Delivery {
+	return &amqp.Delivery{
+		ContentType:  contentType,
+		Acknowledger: &DeliveryAcknowledgerStub{},
+	}
+}
+
 func CreateTestBus() *Bus {
 	return &Bus{
+		// uses rabbit docker container
+		// docker run -d -p 5672:5672 -p 15672:15672 dockerfile/rabbitmq
+		// but you could use any rabbitmq instance you can connect to
 		conf: &BusConfig{
-			Url:        "amqp://mystacklocal:localNotProduction!@mystack.vm/mystack",
-			Queue:      "agent_actions",
-			Exchange:   "agent_actions",
+			Url:        "amqp://guest:guest@192.168.59.103",
+			Queue:      "input_queue",
+			Exchange:   "input_queue",
 			RoutingKey: "",
 		},
 		log: NewStandardLogger(os.Stdout).WithPrefix("[bus]"),
@@ -26,7 +57,26 @@ func TestConnect(t *testing.T) {
 		t.Error("%v", err)
 	} else {
 		go bus.Run()
-		time.Sleep(1 * time.Second)
+		time.Sleep(delayBus)
+		bus.Close()
+	}
+}
+
+func TestSendAndReceive(t *testing.T) {
+	bus := CreateTestBus()
+	if err := bus.Connect(); err != nil {
+		t.Error("%v", err)
+	} else {
+		ok := false
+		bus.Handle("sendandreceivemsg", []HandlerFunc{func(c *Context) {
+			ok = true
+		}})
+		bus.Publish(bus.conf, "sendandreceivemsg")
+		go bus.Run()
+		time.Sleep(delayBus)
+		if !ok {
+			t.Errorf("message not received.")
+		}
 		bus.Close()
 	}
 }
@@ -38,7 +88,7 @@ func TestSimpleRoute(t *testing.T) {
 		passed = true
 	}})
 
-	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+	bus.ProcessMessage(createDummyDelivery("messagetype1"))
 
 	if !passed {
 		t.Errorf("route handler was not invoked.")
@@ -56,7 +106,7 @@ func TestSingleMiddleware(t *testing.T) {
 		msg = true
 	}})
 
-	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+	bus.ProcessMessage(createDummyDelivery("messagetype1"))
 
 	if !middleware {
 		t.Errorf("middleware was not invoked.")
@@ -84,7 +134,7 @@ func TestMultiMiddleware(t *testing.T) {
 		msg = true
 	}})
 
-	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+	bus.ProcessMessage(createDummyDelivery("messagetype1"))
 
 	if !middleware1 {
 		t.Errorf("middleware1 was not invoked.")
@@ -111,7 +161,7 @@ func TestMiddlewareAbort(t *testing.T) {
 		msg = true
 	}})
 
-	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+	bus.ProcessMessage(createDummyDelivery("messagetype1"))
 
 	if !middleware {
 		t.Errorf("middleware was not invoked.")
@@ -131,7 +181,7 @@ func TestHandlerRecovery(t *testing.T) {
 		panic("something horrible went wrong")
 	}})
 
-	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+	bus.ProcessMessage(createDummyDelivery("messagetype1"))
 
 	if !msg {
 		t.Errorf("route handler was not invoked.")

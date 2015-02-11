@@ -79,8 +79,7 @@ func function(pc uintptr) []byte {
 	return name
 }
 
-// Recovery returns a middleware that recovers from any panics and writes a 500 if there was one.
-// While Martini is in development mode, Recovery will also output the panic as HTML.
+// Recovery returns a middleware that recovers from any panics and writes the error to context
 func Recovery() HandlerFunc {
 	return func(c *Context) {
 		defer func() {
