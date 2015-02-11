@@ -46,8 +46,8 @@ func CreateTestBus() *Bus {
 			InputQueue:                "input_queue",
 			ErrorQueue:                "error_queue",
 			RetryQueue:                "retry_queue",
-			RetryIntervalMilliseconds: 10000,
-			RetryLimit:                5,
+			RetryIntervalMilliseconds: 1000,
+			RetryLimit:                2,
 		},
 		log: NewStandardLogger(os.Stdout).WithPrefix("[bus]"),
 	}
@@ -90,6 +90,25 @@ func TestSendAndError(t *testing.T) {
 	} else {
 		bus.SendToError(createDummyDelivery("errormessage"))
 		time.Sleep(delayBus)
+		bus.Close()
+	}
+}
+
+func TestDeferAndReceive(t *testing.T) {
+	bus := CreateTestBus()
+	if err := bus.Connect(); err != nil {
+		t.Error("%v", err)
+	} else {
+		ok := false
+		bus.Handle("sendandreceivemsg", []HandlerFunc{func(c *Context) {
+			ok = true
+		}})
+		bus.Defer(createDummyDelivery("sendandreceivemsg"))
+		go bus.Run()
+		time.Sleep(1200 * time.Millisecond)
+		if !ok {
+			t.Errorf("message not received.")
+		}
 		bus.Close()
 	}
 }

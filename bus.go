@@ -117,7 +117,7 @@ func (bus *Bus) declareAndBind(queue, exchange, routingKey string, args amqp.Tab
 		false, // delete when unused
 		false, // exclusive
 		true,  // nowait
-		nil,   // args
+		args,  // args
 	); err != nil {
 		return q, err
 	}
@@ -128,7 +128,7 @@ func (bus *Bus) declareAndBind(queue, exchange, routingKey string, args amqp.Tab
 		routingKey, // bindingKey
 		exchange,   // sourceExchange
 		true,       // noWait
-		args,       // args
+		nil,        // args
 	); err != nil {
 		return q, err
 	}
@@ -212,38 +212,30 @@ func (bus *Bus) Publish(msg interface{}, msgType string) error {
 		return err
 	}
 
-	publishing := amqp.Publishing{
-		ContentType: msgType,
-		Body:        bodyBytes,
-		Timestamp:   time.Now(),
-	}
-
-	return bus.channel.Publish(
-		bus.conf.InputQueue, // exchange
-		bus.conf.InputQueue, // routing key
-		true,                // mandatory
-		false,               // immediate
-		publishing)
+	return bus.sendToQueue(msgType, bus.conf.InputQueue, bodyBytes)
 }
 
 func (bus *Bus) SendToError(msg *amqp.Delivery) error {
+	return bus.sendToQueue(msg.ContentType, bus.conf.ErrorQueue, msg.Body)
+}
 
+func (bus *Bus) Defer(msg *amqp.Delivery) error {
+	return bus.sendToQueue(msg.ContentType, bus.conf.RetryQueue, msg.Body)
+}
+
+func (bus *Bus) sendToQueue(msgType, queue string, body []byte) error {
 	publishing := amqp.Publishing{
-		ContentType: msg.ContentType,
-		Body:        msg.Body,
+		ContentType: msgType,
+		Body:        body,
 		Timestamp:   time.Now(),
 	}
 
 	return bus.channel.Publish(
-		bus.conf.ErrorQueue, // exchange
-		bus.conf.ErrorQueue, // routing key
-		true,                // mandatory
-		false,               // immediate
+		queue, // exchange
+		queue, // routing key
+		true,  // mandatory
+		false, // immediate
 		publishing)
-}
-
-func (bus *Bus) Defer(msg *amqp.Delivery) error {
-	return nil
 }
 
 func (bus *Bus) createContext(msg *amqp.Delivery, handlers []HandlerFunc) *Context {
