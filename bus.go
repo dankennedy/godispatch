@@ -16,7 +16,7 @@ type Bus struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	inputQ     amqp.Queue
-	deferQ     amqp.Queue
+	retryQ     amqp.Queue
 	errorQ     amqp.Queue
 	messages   <-chan amqp.Delivery
 	doneCh     chan struct{}
@@ -26,13 +26,18 @@ type Bus struct {
 }
 
 type BusConfig struct {
-	Url             string
-	InputExchange   string
-	InputQueue      string
-	InputRoutingKey string
-	ErrorExchange   string
-	ErrorQueue      string
-	ErrorRoutingKey string
+	Url                       string
+	InputExchange             string
+	InputQueue                string
+	InputRoutingKey           string
+	ErrorExchange             string
+	ErrorQueue                string
+	ErrorRoutingKey           string
+	RetryExchange             string
+	RetryQueue                string
+	RetryRoutingKey           string
+	RetryIntervalMilliseconds int32
+	RetryLimit                int32
 }
 
 func (bus *Bus) Connect() error {
@@ -54,11 +59,30 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
-	if bus.inputQ, err = bus.declareAndBind(bus.conf.InputQueue, bus.conf.InputExchange, bus.conf.InputRoutingKey); err != nil {
+	if bus.inputQ, err = bus.declareAndBind(bus.conf.InputQueue,
+		bus.conf.InputExchange,
+		bus.conf.InputRoutingKey,
+		nil); err != nil {
 		return err
 	}
 
-	if bus.errorQ, err = bus.declareAndBind(bus.conf.ErrorQueue, bus.conf.ErrorExchange, bus.conf.ErrorRoutingKey); err != nil {
+	if bus.errorQ, err = bus.declareAndBind(bus.conf.ErrorQueue,
+		bus.conf.ErrorExchange,
+		bus.conf.ErrorRoutingKey,
+		nil); err != nil {
+		return err
+	}
+
+	queueArgs := amqp.Table{
+		"x-dead-letter-exchange":    bus.conf.InputExchange,
+		"x-dead-letter-routing-key": bus.conf.InputRoutingKey,
+		"x-message-ttl":             bus.conf.RetryIntervalMilliseconds,
+	}
+
+	if bus.retryQ, err = bus.declareAndBind(bus.conf.RetryQueue,
+		bus.conf.RetryExchange,
+		bus.conf.RetryRoutingKey,
+		queueArgs); err != nil {
 		return err
 	}
 
@@ -79,7 +103,7 @@ func (bus *Bus) Connect() error {
 	return nil
 }
 
-func (bus *Bus) declareAndBind(queue, exchange, routingKey string) (q amqp.Queue, err error) {
+func (bus *Bus) declareAndBind(queue, exchange, routingKey string, args amqp.Table) (q amqp.Queue, err error) {
 
 	if err = bus.channel.ExchangeDeclare(exchange, // name
 		"direct", // type
@@ -110,7 +134,7 @@ func (bus *Bus) declareAndBind(queue, exchange, routingKey string) (q amqp.Queue
 		routingKey, // bindingKey
 		exchange,   // sourceExchange
 		true,       // noWait
-		nil,        // args
+		args,       // args
 	); err != nil {
 		return q, err
 	}
