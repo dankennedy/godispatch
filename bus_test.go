@@ -73,12 +73,10 @@ func TestMultiMiddleware(t *testing.T) {
 	bus.Use(func(c *Context) {
 		middleware1 = true
 		c.Next()
-	})
-	bus.Use(func(c *Context) {
+	}, func(c *Context) {
 		middleware2 = true
 		c.Next()
-	})
-	bus.Use(func(c *Context) {
+	}, func(c *Context) {
 		middleware3 = true
 		c.Next()
 	})
@@ -97,7 +95,6 @@ func TestMultiMiddleware(t *testing.T) {
 	if !middleware3 {
 		t.Errorf("middleware3 was not invoked.")
 	}
-
 	if !msg {
 		t.Errorf("route handler was not invoked.")
 	}
@@ -122,5 +119,21 @@ func TestMiddlewareAbort(t *testing.T) {
 
 	if msg {
 		t.Errorf("route handler was invoked.")
+	}
+}
+
+func TestHandlerRecovery(t *testing.T) {
+	msg := false
+	bus := CreateTestBus()
+	bus.Use(Recovery())
+	bus.Handle("messagetype1", []HandlerFunc{func(c *Context) {
+		msg = true
+		panic("something horrible went wrong")
+	}})
+
+	bus.ProcessMessage(&amqp.Delivery{ContentType: "messagetype1"})
+
+	if !msg {
+		t.Errorf("route handler was not invoked.")
 	}
 }

@@ -146,11 +146,9 @@ func (bus *Bus) ProcessMessage(msg *amqp.Delivery) {
 		bus.createContext(msg, handlers).Next()
 	}
 
-	if err := msg.Ack(false); err != nil {
-		bus.log.Errorf("Failed to acknowledge %s message. %v", msg.ContentType, err)
-	}
-
-	bus.wg.Done()
+	// if err := msg.Ack(false); err != nil {
+	// 	bus.log.Errorf("Failed to acknowledge %s message. %v", msg.ContentType, err)
+	// }
 }
 
 func (bus *Bus) Use(middlewares ...HandlerFunc) {
@@ -166,6 +164,18 @@ func (bus *Bus) Handle(msgType string, handlers []HandlerFunc) {
 		}
 		bus.routes[msgType] = handlers
 	}
+}
+
+func (bus *Bus) Publish(msg interface{}) error {
+	return nil
+}
+
+func (bus *Bus) DeadLetter(msg *amqp.Delivery) error {
+	return nil
+}
+
+func (bus *Bus) Defer(msg *amqp.Delivery) error {
+	return nil
 }
 
 func (bus *Bus) createContext(msg *amqp.Delivery, handlers []HandlerFunc) *Context {
