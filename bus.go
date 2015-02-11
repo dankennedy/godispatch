@@ -15,7 +15,9 @@ type Bus struct {
 	log        Logger
 	connection *amqp.Connection
 	channel    *amqp.Channel
-	queue      amqp.Queue
+	inputQ     amqp.Queue
+	deferQ     amqp.Queue
+	errorQ     amqp.Queue
 	messages   <-chan amqp.Delivery
 	doneCh     chan struct{}
 	wg         sync.WaitGroup
@@ -24,10 +26,13 @@ type Bus struct {
 }
 
 type BusConfig struct {
-	Url        string
-	Exchange   string
-	Queue      string
-	RoutingKey string
+	Url             string
+	InputExchange   string
+	InputQueue      string
+	InputRoutingKey string
+	ErrorExchange   string
+	ErrorQueue      string
+	ErrorRoutingKey string
 }
 
 func (bus *Bus) Connect() error {
@@ -49,47 +54,16 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
-	if err = bus.channel.ExchangeDeclare(bus.conf.Exchange, // name
-		"direct", // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		true,     // nowait
-		nil,      // args
-	); err != nil {
+	if bus.inputQ, err = bus.declareAndBind(bus.conf.InputQueue, bus.conf.InputExchange, bus.conf.InputRoutingKey); err != nil {
 		return err
 	}
 
-	bus.log.Debugf("Declared exchange '%s'", bus.conf.Exchange)
-
-	if bus.queue, err = bus.channel.QueueDeclare(bus.conf.Queue, // name
-		true,  // durable
-		false, // auto-deleted
-		false, // exclusive
-		true,  // nowait
-		nil,   // args
-	); err != nil {
+	if bus.errorQ, err = bus.declareAndBind(bus.conf.ErrorQueue, bus.conf.ErrorExchange, bus.conf.ErrorRoutingKey); err != nil {
 		return err
 	}
-
-	bus.log.Debugf("Declared queue '%s'", bus.conf.Queue)
-
-	if err = bus.channel.QueueBind(bus.conf.Queue, // queue
-		bus.conf.RoutingKey, // bindingKey
-		bus.conf.Exchange,   // sourceExchange
-		true,                // noWait
-		nil,                 // args
-	); err != nil {
-		return err
-	}
-
-	bus.log.Debugf("Bound '%s' queue to '%s' exchange with routing key '%s'",
-		bus.conf.Queue,
-		bus.conf.Exchange,
-		bus.conf.RoutingKey)
 
 	if bus.messages, err = bus.channel.Consume(
-		bus.conf.Queue,
+		bus.conf.InputQueue,
 		"",    // consumer
 		false, // auto-ack
 		false, // exclusive
@@ -100,9 +74,53 @@ func (bus *Bus) Connect() error {
 		return err
 	}
 
-	bus.log.Infof("Receiving messages from '%s'", bus.conf.Queue)
+	bus.log.Infof("Receiving messages from '%s'", bus.conf.InputQueue)
 
 	return nil
+}
+
+func (bus *Bus) declareAndBind(queue, exchange, routingKey string) (q amqp.Queue, err error) {
+
+	if err = bus.channel.ExchangeDeclare(exchange, // name
+		"direct", // type
+		true,     // durable
+		false,    // auto-deleted
+		false,    // internal
+		true,     // no-wait
+		nil,      // arguments)
+	); err != nil {
+		return q, err
+	}
+
+	bus.log.Debugf("Declared exchange '%s'", exchange)
+
+	if q, err = bus.channel.QueueDeclare(queue, // name
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		true,  // nowait
+		nil,   // args
+	); err != nil {
+		return q, err
+	}
+
+	bus.log.Debugf("Declared queue '%s'", queue)
+
+	if err = bus.channel.QueueBind(queue, // queue
+		routingKey, // bindingKey
+		exchange,   // sourceExchange
+		true,       // noWait
+		nil,        // args
+	); err != nil {
+		return q, err
+	}
+
+	bus.log.Debugf("Bound '%s' queue to '%s' exchange with routing key '%s'",
+		queue,
+		exchange,
+		routingKey)
+
+	return q, nil
 }
 
 func (bus *Bus) Run() {
@@ -128,7 +146,10 @@ func (bus *Bus) Run() {
 func (bus *Bus) Close() {
 	bus.log.Info("Closing")
 
-	close(bus.doneCh)
+	if bus.doneCh != nil {
+		close(bus.doneCh)
+	}
+
 	bus.wg.Wait()
 	bus.channel.Close()
 	bus.connection.Close()
@@ -180,15 +201,27 @@ func (bus *Bus) Publish(msg interface{}, msgType string) error {
 	}
 
 	return bus.channel.Publish(
-		bus.conf.Exchange,   // exchange
-		bus.conf.RoutingKey, // routing key
-		true,                // mandatory
-		false,               // immediate
+		bus.conf.InputExchange,   // exchange
+		bus.conf.InputRoutingKey, // routing key
+		true,  // mandatory
+		false, // immediate
 		publishing)
 }
 
-func (bus *Bus) DeadLetter(msg *amqp.Delivery) error {
-	return nil
+func (bus *Bus) SendToError(msg *amqp.Delivery) error {
+
+	publishing := amqp.Publishing{
+		ContentType: msg.ContentType,
+		Body:        msg.Body,
+		Timestamp:   time.Now(),
+	}
+
+	return bus.channel.Publish(
+		bus.conf.ErrorExchange,   // exchange
+		bus.conf.ErrorRoutingKey, // routing key
+		true,  // mandatory
+		false, // immediate
+		publishing)
 }
 
 func (bus *Bus) Defer(msg *amqp.Delivery) error {

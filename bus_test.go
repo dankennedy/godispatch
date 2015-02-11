@@ -42,10 +42,13 @@ func CreateTestBus() *Bus {
 		// docker run -d -p 5672:5672 -p 15672:15672 dockerfile/rabbitmq
 		// but you could use any rabbitmq instance you can connect to
 		conf: &BusConfig{
-			Url:        "amqp://guest:guest@192.168.59.103",
-			Queue:      "input_queue",
-			Exchange:   "input_queue",
-			RoutingKey: "",
+			Url:             "amqp://guest:guest@192.168.59.103",
+			InputQueue:      "input_queue",
+			InputExchange:   "input_queue",
+			InputRoutingKey: "",
+			ErrorQueue:      "error_queue",
+			ErrorExchange:   "error_queue",
+			ErrorRoutingKey: "",
 		},
 		log: NewStandardLogger(os.Stdout).WithPrefix("[bus]"),
 	}
@@ -77,6 +80,17 @@ func TestSendAndReceive(t *testing.T) {
 		if !ok {
 			t.Errorf("message not received.")
 		}
+		bus.Close()
+	}
+}
+
+func TestSendAndError(t *testing.T) {
+	bus := CreateTestBus()
+	if err := bus.Connect(); err != nil {
+		t.Error("%v", err)
+	} else {
+		bus.SendToError(createDummyDelivery("errormessage"))
+		time.Sleep(delayBus)
 		bus.Close()
 	}
 }
